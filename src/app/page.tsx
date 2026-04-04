@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { supabase } from "../lib/supabase"; // Make sure to copy your supabase.js file to this project too!
-import { Send, LogOut, User, Clock, Search, ShieldCheck,MessageSquare } from "lucide-react";
+import { supabase } from "../lib/supabase"; 
+import { Send, LogOut, User, Clock, Search, ShieldCheck, MessageSquare, Star } from "lucide-react";
+import ReviewsManager from "../components/ReviewsManager";
 
 export default function AdminDashboard() {
   const [session, setSession] = useState<any>(null);
@@ -10,6 +11,9 @@ export default function AdminDashboard() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   
+  // Dashboard State
+  const [activeTab, setActiveTab] = useState<"chat" | "reviews">("chat");
+
   // Chat State
   const [contacts, setContacts] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -46,7 +50,6 @@ export default function AdminDashboard() {
     }
 
     if (data) {
-      // Group messages by sender_id
       const grouped: Record<string, any> = {};
       data.forEach((msg) => {
         if (!grouped[msg.sender_id]) {
@@ -60,7 +63,6 @@ export default function AdminDashboard() {
       });
 
       const contactsArray = Object.values(grouped).sort((a, b) => {
-        // Sort contacts by most recent message
         const lastMsgA = new Date(a.messages[a.messages.length - 1].created_at).getTime();
         const lastMsgB = new Date(b.messages[b.messages.length - 1].created_at).getTime();
         return lastMsgB - lastMsgA;
@@ -68,7 +70,6 @@ export default function AdminDashboard() {
 
       setContacts(contactsArray);
       
-      // If a user is currently selected, update their specific message view
       if (selectedUser) {
         const updatedSelected = contactsArray.find(c => c.id === selectedUser.id);
         if (updatedSelected) setMessages(updatedSelected.messages);
@@ -76,12 +77,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // 3. Realtime Listener
-  // 3. Realtime Listener (UPDATED FOR NOTIFICATIONS)
+  // 3. Realtime Listener (Notifications)
   useEffect(() => {
     if (!session) return;
 
-    // Ask Chrome for permission as soon as you log in
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
       Notification.requestPermission();
     }
@@ -92,22 +91,13 @@ export default function AdminDashboard() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
-          // Re-fetch conversations so the sidebar updates
           fetchAllConversations();
-          
-          // Trigger the Chrome Notification if the message is from a Guest
           if (!payload.new.is_admin) {
-            
-            // Play a subtle ping sound (Optional, but highly recommended)
-            // new Audio('/ping.mp3').play(); 
-
-            // Fire the native desktop notification
             if ("Notification" in window && Notification.permission === "granted") {
-              // We only want to notify if the admin is looking at another tab
               if (document.hidden) { 
                 new Notification("New Portfolio Message!", {
                   body: `${payload.new.sender_email} says: "${payload.new.text}"`,
-                  icon: "/globe.png" // Optional: Add a cool icon to your public folder
+                  icon: "/globe.png" 
                 });
               }
             }
@@ -119,12 +109,12 @@ export default function AdminDashboard() {
     return () => { supabase.removeChannel(channel); };
   }, [session, selectedUser]);
 
-  // Auto-scroll
+  // Auto-scroll for chat
   useEffect(() => {
-    if (chatEndRef.current) {
+    if (activeTab === "chat" && chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [messages, activeTab]);
 
   // Handlers
   const handleLogin = async (e: React.FormEvent) => {
@@ -144,6 +134,8 @@ export default function AdminDashboard() {
   const selectContact = (contact: any) => {
     setSelectedUser(contact);
     setMessages(contact.messages);
+    // If on mobile, you might want to force switch to chat tab here if they were on reviews
+    if (activeTab !== "chat") setActiveTab("chat");
   };
 
   const handleSendReply = async (e: React.FormEvent) => {
@@ -153,7 +145,6 @@ export default function AdminDashboard() {
     const textToSend = replyText;
     setReplyText("");
 
-    // Insert reply as Admin, but attach it to the Guest's sender_id so it routes to their screen!
     await supabase.from('messages').insert([{
       sender_id: selectedUser.id,
       sender_email: session.user.email,
@@ -213,8 +204,8 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#0A0A0A] flex flex-col md:flex-row text-white overflow-hidden">
       
-      {/* LEFT SIDEBAR: Contacts List */}
-      <div className="w-full md:w-80 lg:w-96 border-r border-white/10 flex flex-col bg-zinc-900/30 h-screen">
+      {/* LEFT SIDEBAR */}
+      <div className="w-full md:w-80 lg:w-96 border-r border-white/10 flex flex-col bg-zinc-900/30 h-screen shrink-0">
         {/* Sidebar Header */}
         <div className="h-16 border-b border-white/10 flex items-center justify-between px-4 bg-zinc-900/50">
           <h2 className="font-bold text-lg flex items-center gap-2">
@@ -225,65 +216,96 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Search Bar */}
-        <div className="p-4 border-b border-white/10">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-            <input 
-              type="text" 
-              placeholder="Search conversations..." 
-              className="w-full bg-black/50 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:border-orange-500/50"
-            />
-          </div>
+        {/* Navigation Tabs */}
+        <div className="p-4 border-b border-white/10 space-y-2 bg-zinc-900/20">
+          <button 
+            onClick={() => setActiveTab("chat")} 
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-medium ${
+              activeTab === "chat" 
+                ? "bg-orange-500/10 text-orange-500 border border-orange-500/20" 
+                : "text-zinc-400 hover:bg-white/5 hover:text-white border border-transparent"
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" /> Live Messages
+          </button>
+          <button 
+            onClick={() => setActiveTab("reviews")} 
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-medium ${
+              activeTab === "reviews" 
+                ? "bg-orange-500/10 text-orange-500 border border-orange-500/20" 
+                : "text-zinc-400 hover:bg-white/5 hover:text-white border border-transparent"
+            }`}
+          >
+            <Star className="w-4 h-4" /> Reviews Manager
+          </button>
         </div>
 
-        {/* Contacts List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {contacts.map((contact) => {
-            const lastMessage = contact.messages[contact.messages.length - 1];
-            const isSelected = selectedUser?.id === contact.id;
-
-            return (
-              <div 
-                key={contact.id}
-                onClick={() => selectContact(contact)}
-                className={`p-3 rounded-xl cursor-pointer transition-colors flex items-start gap-3 ${
-                  isSelected ? "bg-orange-500/10 border border-orange-500/20" : "hover:bg-white/5 border border-transparent"
-                }`}
-              >
-                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-white/5">
-                  <User className="w-5 h-5 text-zinc-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <h3 className="font-medium text-sm truncate">{contact.email}</h3>
-                    <span className="text-[10px] text-zinc-500 shrink-0 ml-2">
-                      {new Date(lastMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p className={`text-xs truncate ${!lastMessage.is_admin ? "text-zinc-300 font-medium" : "text-zinc-500"}`}>
-                    {lastMessage.is_admin ? "You: " : ""}{lastMessage.text}
-                  </p>
-                </div>
+        {/* Dynamic Sidebar Content (Only show search/contacts when in Chat mode) */}
+        {activeTab === "chat" && (
+          <>
+            <div className="p-4 border-b border-white/10">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input 
+                  type="text" 
+                  placeholder="Search conversations..." 
+                  className="w-full bg-black/50 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm outline-none focus:border-orange-500/50"
+                />
               </div>
-            );
-          })}
-          {contacts.length === 0 && (
-            <div className="text-center p-8 text-zinc-500 text-sm">
-              No active conversations yet.
             </div>
-          )}
-        </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {contacts.map((contact) => {
+                const lastMessage = contact.messages[contact.messages.length - 1];
+                const isSelected = selectedUser?.id === contact.id;
+
+                return (
+                  <div 
+                    key={contact.id}
+                    onClick={() => selectContact(contact)}
+                    className={`p-3 rounded-xl cursor-pointer transition-colors flex items-start gap-3 ${
+                      isSelected ? "bg-orange-500/10 border border-orange-500/20" : "hover:bg-white/5 border border-transparent"
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-white/5">
+                      <User className="w-5 h-5 text-zinc-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-baseline mb-1">
+                        <h3 className="font-medium text-sm truncate text-white">{contact.email}</h3>
+                        <span className="text-[10px] text-zinc-500 shrink-0 ml-2">
+                          {new Date(lastMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className={`text-xs truncate ${!lastMessage.is_admin ? "text-zinc-300 font-medium" : "text-zinc-500"}`}>
+                        {lastMessage.is_admin ? "You: " : ""}{lastMessage.text}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              {contacts.length === 0 && (
+                <div className="text-center p-8 text-zinc-500 text-sm">
+                  No active conversations yet.
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* RIGHT SIDE: Active Chat Area */}
-      <div className="flex-1 flex flex-col h-screen bg-[#0A0A0A]">
-        {selectedUser ? (
+      {/* RIGHT SIDE: Main Content Area */}
+      <div className="flex-1 flex flex-col h-screen bg-[#0A0A0A] overflow-y-auto">
+        
+        {/* CONDITIONAL RENDERING: Review Manager OR Live Chat */}
+        {activeTab === "reviews" ? (
+          <ReviewsManager />
+        ) : selectedUser ? (
           <>
             {/* Chat Header */}
-            <div className="h-16 border-b border-white/10 flex items-center px-6 bg-zinc-900/50 backdrop-blur-md sticky top-0 z-10">
+            <div className="h-16 border-b border-white/10 flex items-center px-6 bg-zinc-900/50 backdrop-blur-md sticky top-0 z-10 shrink-0">
               <div>
-                <h3 className="font-bold">{selectedUser.email}</h3>
+                <h3 className="font-bold text-white">{selectedUser.email}</h3>
                 <p className="text-xs text-zinc-400 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> Session Active
                 </p>
@@ -310,7 +332,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-zinc-900/50 border-t border-white/10">
+            <div className="p-4 bg-zinc-900/50 border-t border-white/10 shrink-0">
               <form onSubmit={handleSendReply} className="relative flex items-center max-w-4xl mx-auto">
                 <input
                   type="text"
