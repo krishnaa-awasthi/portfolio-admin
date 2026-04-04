@@ -77,7 +77,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // 3. Realtime Listener (Notifications)
+  // 3. Realtime Listener (FIXED: Unique channel names and correct dependencies)
   useEffect(() => {
     if (!session) return;
 
@@ -85,8 +85,10 @@ export default function AdminDashboard() {
       Notification.requestPermission();
     }
 
+    // Creating a unique channel name prevents collision errors
+    const channelName = `admin-realtime-${Date.now()}`;
     const channel = supabase
-      .channel('admin-realtime')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
@@ -107,7 +109,8 @@ export default function AdminDashboard() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [session, selectedUser]);
+  // FIXED: Removed selectedUser so it doesn't recreate the listener on every click
+  }, [session]); 
 
   // Auto-scroll for chat
   useEffect(() => {
@@ -134,7 +137,7 @@ export default function AdminDashboard() {
   const selectContact = (contact: any) => {
     setSelectedUser(contact);
     setMessages(contact.messages);
-    // If on mobile, you might want to force switch to chat tab here if they were on reviews
+    // If on mobile, force switch to chat tab here if they were on reviews
     if (activeTab !== "chat") setActiveTab("chat");
   };
 
